@@ -1,19 +1,13 @@
-use Vault;
+use Cro::HTTP::Router;
+use Cro::HTTP::Client;
 use Cro::HTTP::Log::File;
 use Cro::HTTP::Server;
-use Routes;
 
-my Vault $vault;
-with %*ENV<VAULT_DEV_ROOT_TOKEN_ID> {
-    #$vault = Vault.new(:host<vault>, :token($_)).new-acessor: :policies["web"] until $vault;
-    say await Vault.new(
-        :token($_),
-        |(:proto($_) with %*ENV<VAULT_PROTO>),
-        |(:host($_)  with %*ENV<VAULT_HOST>),
-        |(:port($_)  with %*ENV<VAULT_PORT>),
-    ).create-token: :policies["web"];
-    %*ENV<VAULT_DEV_ROOT_TOKEN_ID> = "";
-}
+my $application = route {
+    get -> {
+        content 'text/html', '';
+    }
+};
 
 my Cro::Service $http = Cro::HTTP::Server.new(
     http => <1.1>,
@@ -21,11 +15,23 @@ my Cro::Service $http = Cro::HTTP::Server.new(
         die("Missing VAULT_PERL6_HOST in environment"),
     port => %*ENV<VAULT_PERL6_PORT> ||
         die("Missing VAULT_PERL6_PORT in environment"),
-    application => routes(:$vault),
+    :$application,
     after => [
         Cro::HTTP::Log::File.new(logs => $*OUT, errors => $*ERR)
     ]
 );
+
+say 1;
+my $res = await Cro::HTTP::Client
+    .new(:headers[:content-type<application/json>, X-Vault-Token => 'my-very-big-and-dev-only-token'])
+    .post("http://localhost:32770/v1/auth/token/create",
+          body => { policies => ["web"] });
+say 2;
+say $res;
+say 3;
+say await $res.body-text;
+say 4;
+
 $http.start;
 say "Listening at http://%*ENV<VAULT_PERL6_HOST>:%*ENV<VAULT_PERL6_PORT>";
 react {
